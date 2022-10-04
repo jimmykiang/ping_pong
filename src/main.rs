@@ -1,5 +1,5 @@
 use crossbeam::{after, channel, never, select};
-use std::time::{Duration};
+use std::time::Duration;
 use std::{thread, time};
 
 #[derive(Debug)]
@@ -27,34 +27,36 @@ fn main() {
     let ping_timeout = time_out.map(after).unwrap_or_else(never);
     let pong_timeout = time_out.map(after).unwrap_or_else(never);
 
-    crossbeam::scope(|s| {
-        s.spawn(|_| {
-            let mut msg = msg;
-            loop {
-                select! {
-                    recv(ping_timeout) -> _ => {
-                        println!("Ping: timed out");
+    let ping = || {
+        let mut msg = msg;
+        loop {
+            select! {
+                recv(ping_timeout) -> _ => {
+                    println!("Ping: timed out");
+                    break;
+                },
+                recv(rx_terminate) -> x => {
+                    println!("{}", x.unwrap());
+                    break;
+                },
+                default => {
+                    if msg.ping_pong_value >= msg.stop_value {
+                        tx_terminate.send("Ping complete: Terminate remote thread.".to_owned()).unwrap();
                         break;
-                    },
-                    recv(rx_terminate) -> x => {
-                        println!("{}", x.unwrap());
-                        break;
-                    },
-                    default => {
-                        if msg.ping_pong_value >= msg.stop_value {
-                            tx_terminate.send("Ping complete: Terminate remote thread.".to_owned()).unwrap();
-                            break;
-                        }
+                    }
 
-                        println!("Ping: {:?}", msg);
-                        tx1.send(msg).unwrap();
-                        msg = rx2.recv().unwrap();
-                        println!("Ping received: {:?}", msg);
-                        thread::sleep(time::Duration::from_millis(500));
-                    },
-                }
+                    println!("Ping: {:?}", msg);
+                    tx1.send(msg).unwrap();
+                    msg = rx2.recv().unwrap();
+                    println!("Ping received: {:?}", msg);
+                    thread::sleep(time::Duration::from_millis(500));
+                },
             }
-        });
+        }
+    };
+
+    crossbeam::scope(|s| {
+        s.spawn(|_| ping());
 
         s.spawn(|_| loop {
             select! {
@@ -75,5 +77,5 @@ fn main() {
             }
         });
     })
-        .unwrap();
+    .unwrap();
 }
